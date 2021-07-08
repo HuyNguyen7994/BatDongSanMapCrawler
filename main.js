@@ -74,6 +74,3 @@ async function parseDetail (page, parseList, targetData) {
     targetData.push(infoCard);
   }
 }
-
-/* await page.click('#productitem_28442347 >> text=Địa chỉ: Dự án Sadeco ven sông, Đường Nguyễn Văn Linh, Phường Tân Phong, Quận 7,');
-await page.click('.bdsInfoWindow-head'); */
