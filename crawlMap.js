@@ -8,23 +8,28 @@ const yamlFile = "full.yaml";
 (async () => {
   const browser = await playwright.firefox.launch({headless:true, slowMo:0});
   const data_master = {};
-  const urls = Object.entries(loadYAML(yamlFile));
-  await Promise.all(urls.map(async name_url  => {
-    const page = await browser.newPage();
-    const [name, url] = name_url;
-    const data = [];
-    await page.goto(url);
-    await page.waitForSelector(".detail-title");
-    const totalListing = + await page.evaluate(() => document.querySelector("div#lblResultMessage > font").textContent);
-    console.log(`${name} has ${totalListing} listings`);
-    await scrollMenu(page);
-    const parseList = await page.$$("li.detail-item");
-    assert.strictEqual(parseList.length , totalListing, `${name} either failed to scroll or parse fully`);
-    await parseDetail(page, parseList, data);
-    data_master[name] = data;
-    await page.close()
-  }))
-  await browser.close();
+  urls = Object.entries(loadYAML(yamlFile));
+  try {
+    await Promise.all(urls.map(async name_url  => {
+      const page = await browser.newPage();
+      const [name, url] = name_url;
+      const data = [];
+      await page.goto(url);
+      await page.waitForSelector(".detail-title");
+      const totalListing = + await page.evaluate(() => document.querySelector("div#lblResultMessage > font").textContent);
+      console.log(`${name} has ${totalListing} listings`);
+      await scrollMenu(page);
+      parseList = await page.$$("li.detail-item");
+      assert.strictEqual(parseList.length , totalListing, `${name} either failed to scroll or parse fully`);
+      await parseDetail(page, parseList, data);
+      data_master[name] = data;
+      await page.close()
+    }))
+  } catch(e) {
+    throw e
+  } finally {
+    await browser.close();
+  }
   const finishTime = new Date();
   const pathOutput = `./output/crawlMap/${+finishTime}.json`
   writeToJSON(pathOutput, data_master);

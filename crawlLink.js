@@ -3,7 +3,7 @@ const assert = require("assert");
 const yaml = require("js-yaml");
 const playwright = require('playwright');
 
-const yamlFile = "crawlLink.yaml"
+const yamlFile = "linksToCrawl.yaml"
 
 
 function writeToJSON (file, data) {
@@ -66,25 +66,30 @@ async function processPage (browser, link, pageID) {
   const browser = await playwright.firefox.launch({headless:true, slowMo:0});
   const dataMaster = {};
   const crawlEntries = Object.entries(loadYAML(yamlFile));
-  await Promise.all(crawlEntries.map(async entry  => {
-    const [name, url] = entry;
-    dataMaster[name] = [];
-    const firstPage = await processPage(browser, url, 1);
-    dataMaster[name].push(...firstPage["data"]);
-    const expectListings = firstPage["expectListings"];
-    const expectPages = firstPage["lastPage"];
-    console.log(`Found ${expectListings} listings in ${expectPages} pages for ${url}`);
-    if (expectPages != 0) {
-      const nextPages = Array.from(new Array(expectPages - 1), (x,i) => i + 2);
-      await Promise.all(nextPages.map(async pageID => {
-        const dataPage = await processPage(browser, url, pageID)
-        dataMaster[name].push(...dataPage["data"])
-      }))
-    }
-    const parsedListings = dataMaster[name].length
-    assert.strictEqual(parsedListings, expectListings, `Errors while crawling ${url}`)
-  }))
-  await browser.close();
+  try {
+    await Promise.all(crawlEntries.map(async entry  => {
+      const [name, url] = entry;
+      dataMaster[name] = [];
+      const firstPage = await processPage(browser, url, 1);
+      dataMaster[name].push(...firstPage["data"]);
+      const expectListings = firstPage["expectListings"];
+      const expectPages = firstPage["lastPage"];
+      console.log(`Found ${expectListings} listings in ${expectPages} pages for ${url}`);
+      if (expectPages != 0) {
+        const nextPages = Array.from(new Array(expectPages - 1), (x,i) => i + 2);
+        await Promise.all(nextPages.map(async pageID => {
+          const dataPage = await processPage(browser, url, pageID)
+          dataMaster[name].push(...dataPage["data"])
+        }))
+      }
+      const parsedListings = dataMaster[name].length
+      assert.strictEqual(parsedListings, expectListings, `Errors while crawling ${url}`)
+    }))
+  } catch(e) {
+    throw e
+  } finally {
+    await browser.close();
+  }
   const finishTime = new Date();
   const pathOutput = `./output/crawlLink/${+finishTime}.json`
   writeToJSON(pathOutput, dataMaster);
