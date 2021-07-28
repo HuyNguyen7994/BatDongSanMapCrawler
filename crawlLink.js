@@ -18,7 +18,7 @@ function loadYAML (filePath) {
 
 async function processPage (browser, link, pageID) {
   const page = await browser.newPage();
-  const linkToCrawl = `${link}/p${pageID}`;
+  const linkToCrawl = pageID === 1 ? link :  `${link}/p${pageID}`;
   const dataPage = {};
   await page.goto(linkToCrawl);
   await page.waitForSelector(".product-item")
