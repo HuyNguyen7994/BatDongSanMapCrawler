@@ -5,7 +5,6 @@ const playwright = require('playwright');
 
 const yamlFile = "linksToCrawl.yaml"
 
-
 function writeToJSON (file, data) {
   fs.writeFileSync(file, JSON.stringify(data))
 };
@@ -16,61 +15,61 @@ function loadYAML (filePath) {
   return content
 };
 
-async function processPage (browser, link, pageID) {
-  const page = await browser.newPage();
-  const linkToCrawl = pageID === 1 ? link :  `${link}/p${pageID}`;
-  const dataPage = {};
-  await page.goto(linkToCrawl);
-  await page.waitForSelector(".product-item")
-  if (pageID == 1) {
-    const lastPage = await page.evaluate(() => {
-      const element = document.getElementsByClassName("re__pagination-icon")[0]
-      if (element != undefined) {
-        return element.getAttribute("pid")
-      } else {
-        return 0
-      }
-    })
-    const expectListings = await page.evaluate(() => document.getElementById("count-number").textContent)
-    dataPage["lastPage"] = +lastPage;
-    dataPage["expectListings"] = + expectListings.replace(",","");
-  }
-  dataPage["data"] = await page.evaluate(() => {
-    const allListings = document.getElementsByClassName("product-item");
-    const data = [];
-    const simpleExtract = (listing, key) => {
-      const element = listing.getElementsByClassName(key)[0]
-      if (element != undefined) {
-        return element.textContent.trim()
-      } else {
-        return null
-      }
-    };
-    for (const listing of allListings) {
-      const infoCard = {}
-      infoCard["Title"] = simpleExtract(listing, "product-title");
-      infoCard["Price"] = simpleExtract(listing, "price");
-      infoCard["Area"] = simpleExtract(listing, "area");
-      infoCard["PostDate"] = simpleExtract(listing, "tooltip-time");
-      infoCard["Reference"] = listing.getElementsByClassName("wrap-plink")[0].href
-      data.push(infoCard);
+async function fetchLinkFromPage ([link, isFirstPage]) {
+  const parseHtmlFromText = (text) => {
+    const parser = new DOMParser();
+    return parser.parseFromString(text, 'text/html');
+  };
+  const simpleExtract = (listing, key) => {
+    const element = listing.getElementsByClassName(key)[0]
+    if (element != undefined) {
+      return element.textContent.trim()
+    } else {
+      return null
     }
-    return data
-  })
-  await page.close()
+  };
+  const dataPage = {}
+  const page = await fetch(link).then(response => response.text()).then(text => parseHtmlFromText(text));
+  if (isFirstPage) {
+    const element = page.querySelector(".re__pagination-icon")
+    const lastPage = element ? +element.getAttribute("pid") : 0
+    const expectListings = +page.querySelector("#count-number").textContent.replace(",","")
+    dataPage["lastPage"] = lastPage;
+    dataPage["expectListings"] = expectListings;
+  }
+  const dataItem = []
+  const allListings = page.getElementsByClassName("product-item");
+  for (const listing of allListings) {
+    const infoCard = {}
+    infoCard["Title"] = simpleExtract(listing, "product-title");
+    infoCard["Price"] = simpleExtract(listing, "price");
+    infoCard["Area"] = simpleExtract(listing, "area");
+    infoCard["PostDate"] = simpleExtract(listing, "tooltip-time");
+    infoCard["Reference"] = listing.getElementsByClassName("wrap-plink")[0].href
+    dataItem.push(infoCard);
+  }
+  dataPage["data"] = dataItem
   return dataPage
 }
 
+async function processPage (mainPage, link, pageID) {
+  const linkToCrawl = pageID === 1 ? link :  `${link}/p${pageID}`;
+  return await mainPage.evaluate( fetchLinkFromPage , [linkToCrawl, true]);
+}
 
 (async () => {
-  const browser = await playwright.firefox.launch({headless:true, slowMo:0});
+  const browser = await playwright.firefox.launch({headless:false, slowMo:0});
   const dataMaster = {};
   const crawlEntries = Object.entries(loadYAML(yamlFile));
   try {
     await Promise.all(crawlEntries.map(async entry  => {
       const [name, url] = entry;
       dataMaster[name] = [];
-      const firstPage = await processPage(browser, url, 1);
+      const mainPage = await browser.newPage();
+      await mainPage.goto("https://batdongsan.com.vn/");
+      await mainPage.waitForSelector("body")
+      // mainPage.on('console', consoleObj => console.log(consoleObj.text()));
+      const firstPage = await processPage(mainPage, url, 1);
       dataMaster[name].push(...firstPage["data"]);
       const expectListings = firstPage["expectListings"];
       const expectPages = firstPage["lastPage"];
@@ -78,12 +77,15 @@ async function processPage (browser, link, pageID) {
       if (expectPages != 0) {
         const nextPages = Array.from(new Array(expectPages - 1), (x,i) => i + 2);
         await Promise.all(nextPages.map(async pageID => {
-          const dataPage = await processPage(browser, url, pageID)
+          const dataPage = await processPage(mainPage, url, pageID)
           dataMaster[name].push(...dataPage["data"])
         }))
       }
       const parsedListings = dataMaster[name].length
-      assert.strictEqual(parsedListings, expectListings, `Errors while crawling ${url}`)
+      if ( parsedListings != expectListings )
+      {
+        console.log(`Anomalies detected in ${url}. Actual: ${parsedListings}. Expect ${expectListings}`);
+      }
     }))
   } catch(e) {
     throw e
